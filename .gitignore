@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+# Data & runs
+data/raw/
+data/monthly/
+models/archive/
+models/current/
+mlruns/
+logs/
+# Jupyter
+.ipynb_checkpoints/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+data/raw/
+mlruns/
+logs/
+Lib/
+Include/
+Scripts/
+pyvenv.cfg
