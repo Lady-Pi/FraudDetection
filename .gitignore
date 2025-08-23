@@ -1,25 +1,56 @@
 # Python
 __pycache__/
 *.py[cod]
-.venv/
-# Data & runs
-data/raw/
-data/monthly/
-models/archive/
-models/current/
-mlruns/
-logs/
-# Jupyter
-.ipynb_checkpoints/
+*.pyo
+*.pyd
+.Python
+*.pyc
+
+# Virtual environments
 .venv/
 venv/
-__pycache__/
-*.pyc
-.env
-data/raw/
-mlruns/
-logs/
+env/
+ENV/
 Lib/
 Include/
 Scripts/
 pyvenv.cfg
+.pyvenv.cfg
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Data (keep monthly, exclude raw)
+data/raw/
+# NOTE: data/monthly/ is kept - needed for MLOps pipeline
+
+# Models (keep current model, exclude archive)
+models/archive/
+# NOTE: models/current/ is kept - needed for API serving
+
+# ML experiment tracking
+mlruns/
+logs/
+.mlflow/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
