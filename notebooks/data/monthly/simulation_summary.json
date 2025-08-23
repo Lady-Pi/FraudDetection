@@ -1,0 +1,108 @@
+{
+  "simulation_date": "2025-08-23T14:09:02.202884",
+  "total_months": 12,
+  "baseline_fraud_rate": 0.02052,
+  "drift_months": {
+    "06": "feature_drift_debt_to_income",
+    "09": "fraud_rate_increase",
+    "11": "transaction_behavior_and_demographics"
+  },
+  "monthly_stats": [
+    {
+      "month": "01",
+      "loan_count": 4167,
+      "transaction_count": 10640,
+      "loan_fraud_rate": 0.017998560115190784,
+      "transaction_fraud_rate": 0.00949248120300752,
+      "drift_applied": "none"
+    },
+    {
+      "month": "02",
+      "loan_count": 4167,
+      "transaction_count": 10315,
+      "loan_fraud_rate": 0.0199184065274778,
+      "transaction_fraud_rate": 0.010567135239941832,
+      "drift_applied": "none"
+    },
+    {
+      "month": "03",
+      "loan_count": 4167,
+      "transaction_count": 10336,
+      "loan_fraud_rate": 0.02183825293976482,
+      "transaction_fraud_rate": 0.009578173374613003,
+      "drift_applied": "none"
+    },
+    {
+      "month": "04",
+      "loan_count": 4167,
+      "transaction_count": 10490,
+      "loan_fraud_rate": 0.018478521718262537,
+      "transaction_fraud_rate": 0.00905624404194471,
+      "drift_applied": "none"
+    },
+    {
+      "month": "05",
+      "loan_count": 4167,
+      "transaction_count": 10521,
+      "loan_fraud_rate": 0.020158387329013677,
+      "transaction_fraud_rate": 0.009694895922440832,
+      "drift_applied": "none"
+    },
+    {
+      "month": "06",
+      "loan_count": 4167,
+      "transaction_count": 10330,
+      "loan_fraud_rate": 0.022318214542836574,
+      "transaction_fraud_rate": 0.01181026137463698,
+      "drift_applied": "feature_drift_debt_to_income"
+    },
+    {
+      "month": "07",
+      "loan_count": 4167,
+      "transaction_count": 10460,
+      "loan_fraud_rate": 0.02087832973362131,
+      "transaction_fraud_rate": 0.009847036328871893,
+      "drift_applied": "none"
+    },
+    {
+      "month": "08",
+      "loan_count": 4167,
+      "transaction_count": 10437,
+      "loan_fraud_rate": 0.019678425725941924,
+      "transaction_fraud_rate": 0.010731052984574111,
+      "drift_applied": "none"
+    },
+    {
+      "month": "09",
+      "loan_count": 4166,
+      "transaction_count": 10547,
+      "loan_fraud_rate": 0.04488718194911186,
+      "transaction_fraud_rate": 0.02493600075850953,
+      "drift_applied": "fraud_rate_increase"
+    },
+    {
+      "month": "10",
+      "loan_count": 4166,
+      "transaction_count": 10361,
+      "loan_fraud_rate": 0.019923187710033607,
+      "transaction_fraud_rate": 0.008879451790367724,
+      "drift_applied": "none"
+    },
+    {
+      "month": "11",
+      "loan_count": 4166,
+      "transaction_count": 10498,
+      "loan_fraud_rate": 0.01944311089774364,
+      "transaction_fraud_rate": 0.009144598971232615,
+      "drift_applied": "transaction_behavior_and_demographics"
+    },
+    {
+      "month": "12",
+      "loan_count": 4166,
+      "transaction_count": 10346,
+      "loan_fraud_rate": 0.021843494959193473,
+      "transaction_fraud_rate": 0.012081964044075005,
+      "drift_applied": "none"
+    }
+  ]
+}
