@@ -24,11 +24,9 @@ pyvenv.cfg
 
 # Data (keep monthly, exclude raw)
 data/raw/
-# NOTE: data/monthly/ is kept - needed for MLOps pipeline
 
 # Models (keep current model, exclude archive)
 models/archive/
-# NOTE: models/current/ is kept - needed for API serving
 
 # ML experiment tracking
 mlruns/
