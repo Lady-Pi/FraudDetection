@@ -1,0 +1,15 @@
+### Test Health
+GET http://127.0.0.1:5000/health
+
+### Test Prediction (Corrected)
+POST http://127.0.0.1:5000/predict
+Authorization: Bearer fraud-detection-secret-2025
+Content-Type: application/json
+
+{
+  "loan_amount_requested": 50000,
+  "annual_income": 96000,
+  "debt_to_income_ratio": 0.3,
+  "applicant_age": 35,
+  "number_of_dependents": 2
+}

@@ -1,0 +1,34 @@
+{
+  "model_type": "LogisticRegression",
+  "training_date": "2025-08-26T16:15:14",
+  "training_months": "01-03",
+  "validation_month": "04",
+  "features": [
+    "debt_to_income_ratio",
+    "applicant_age",
+    "cibil_score",
+    "loan_amount_requested",
+    "monthly_income",
+    "existing_emis_monthly",
+    "interest_rate_offered",
+    "loan_tenure_months",
+    "number_of_dependents",
+    "trans_transaction_amount_count",
+    "trans_transaction_amount_sum",
+    "trans_transaction_amount_mean",
+    "trans_transaction_amount_std",
+    "trans_fraud_flag_sum"
+  ],
+  "n_features": 14,
+  "performance": {
+    "validation_accuracy": 0.9203263738900888,
+    "validation_auc": 0.9205029689137268,
+    "validation_precision": 0.16,
+    "validation_recall": 0.7792207792207793,
+    "validation_f1": 0.26548672566371684
+  },
+  "preprocessing": {
+    "scaler_type": "StandardScaler",
+    "encoders": []
+  }
+}
