@@ -136,9 +136,13 @@ def predict():
         if validation_error:
             return jsonify({"error": validation_error}), 400
 
+        # Apply defaults for missing optional fields
+        from .schemas import apply_defaults_to_request
+        data_with_defaults = apply_defaults_to_request(data)
+
         # Handle both single prediction and batch
-        is_batch = isinstance(data, list)
-        input_data = data if is_batch else [data]
+        is_batch = isinstance(data_with_defaults, list)
+        input_data = data_with_defaults if is_batch else [data_with_defaults]
 
         # Preprocess features
         X = preprocess_features(input_data)
