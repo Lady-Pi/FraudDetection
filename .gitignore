@@ -22,10 +22,10 @@ pyvenv.cfg
 .env.local
 .env.*.local
 
-# Data (keep monthly, exclude raw)
+# Raw data
 data/raw/
 
-# Models (keep current model, exclude archive)
+# Archived models
 models/archive/
 
 # Notebook outputs and checkpoints
@@ -59,8 +59,6 @@ Thumbs.db
 *.tmp
 *.temp
 
-
-
 # Kaggle cache
 .cache/
 *.cache/
@@ -70,7 +68,7 @@ encoders.pkl
 model.pkl
 scaler.pkl
 
-# Performance artifacts (keep CSV, ignore large plots)
+# Performance artifacts 
 metrics/artifacts/*.png
 metrics/artifacts/*.jpg
 metrics/artifacts/*.pdf
