@@ -63,11 +63,6 @@ Thumbs.db
 .cache/
 *.cache/
 
-# Encoded pickle files in notebooks
-encoders.pkl
-model.pkl
-scaler.pkl
-
 # Performance artifacts 
 metrics/artifacts/*.png
 metrics/artifacts/*.jpg
