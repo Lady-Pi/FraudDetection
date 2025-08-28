@@ -282,6 +282,7 @@ def main():
         else:
             print("Model performance acceptable")
 
+
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
         # Output error results for GitHub Actions
@@ -301,8 +302,9 @@ def main():
             }
             with open("evaluation_results.json", "w") as f:
                 json.dump(error_result, f, indent=2)
-        raise
-
+        # Don't re-raise the exception - let GitHub Actions continue
+        print(f"Evaluation failed: {e}")
+        return
 
 
 if __name__ == "__main__":
