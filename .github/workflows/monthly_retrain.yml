@@ -1,0 +1,280 @@
+name: Monthly Model Retraining
+
+on:
+  schedule:
+    # Run on the 1st of every month at 2 AM UTC
+    - cron: '0 2 1 * *'
+  workflow_dispatch:
+    inputs:
+      month:
+        description: 'Month to evaluate (01-12)'
+        required: true
+        default: '01'
+        type: string
+      force_retrain:
+        description: 'Force retraining even if performance is good'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.11'
+  MLFLOW_TRACKING_URI: file:./mlruns
+  PERFORMANCE_THRESHOLD: 0.05  # 5% performance drop threshold
+
+jobs:
+  evaluate-and-retrain:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Create directories
+      run: |
+        mkdir -p models/current models/archive metrics/artifacts logs mlruns
+
+    - name: Determine evaluation month
+      id: month
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          MONTH="${{ github.event.inputs.month }}"
+        else
+          # For scheduled runs, use current month
+          MONTH=$(date +%m)
+        fi
+        echo "month=$MONTH" >> $GITHUB_OUTPUT
+        echo "Evaluating month: $MONTH"
+
+    - name: Run model evaluation
+      id: evaluate
+      run: |
+        python -m src.models.evaluate --month ${{ steps.month.outputs.month }} --output-json
+        
+        # Read evaluation results
+        if [ -f "evaluation_results.json" ]; then
+          ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json'))['accuracy'])")
+          AUROC=$(python -c "import json; print(json.load(open('evaluation_results.json'))['auroc'])")
+          BASELINE_ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json')).get('baseline_accuracy', 0.8))")
+          
+          # Calculate performance drop
+          ACCURACY_DROP=$(python -c "print($BASELINE_ACCURACY - $ACCURACY)")
+          NEEDS_RETRAIN=$(python -c "print('true' if $ACCURACY_DROP >= ${{ env.PERFORMANCE_THRESHOLD }} else 'false')")
+          
+          echo "accuracy=$ACCURACY" >> $GITHUB_OUTPUT
+          echo "auroc=$AUROC" >> $GITHUB_OUTPUT
+          echo "accuracy_drop=$ACCURACY_DROP" >> $GITHUB_OUTPUT
+          echo "needs_retrain=$NEEDS_RETRAIN" >> $GITHUB_OUTPUT
+          echo "baseline_accuracy=$BASELINE_ACCURACY" >> $GITHUB_OUTPUT
+          
+          echo "Current accuracy: $ACCURACY"
+          echo "Baseline accuracy: $BASELINE_ACCURACY"
+          echo "Performance drop: $ACCURACY_DROP"
+          echo "Needs retraining: $NEEDS_RETRAIN"
+        else
+          echo "needs_retrain=true" >> $GITHUB_OUTPUT
+          echo "No baseline found - triggering initial training"
+        fi
+
+    - name: Check if retraining needed
+      run: |
+        if [ "${{ steps.evaluate.outputs.needs_retrain }}" == "true" ] || [ "${{ github.event.inputs.force_retrain }}" == "true" ]; then
+          echo "Retraining triggered:"
+          if [ "${{ github.event.inputs.force_retrain }}" == "true" ]; then
+            echo "  - Reason: Force retrain requested"
+          fi
+          if [ "${{ steps.evaluate.outputs.needs_retrain }}" == "true" ]; then
+            echo "  - Reason: Performance drop detected (${ACCURACY_DROP})"
+          fi
+        else
+          echo "Model performance acceptable - no retraining needed"
+        fi
+
+    - name: Retrain model
+      if: steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true'
+      run: |
+        echo "Starting model retraining..."
+        python -m src.models.train --through ${{ steps.month.outputs.month }}
+        
+        # Verify new model was created
+        if [ -f "models/current/model.pkl" ]; then
+          echo "Model retraining completed successfully"
+        else
+          echo "Model retraining failed"
+          exit 1
+        fi
+
+    - name: Validate new model
+      if: steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true'
+      id: validate
+      run: |
+        # Test the new model on the current month
+        python -m src.models.evaluate --month ${{ steps.month.outputs.month }} --output-json
+        
+        NEW_ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json'))['accuracy'])")
+        NEW_AUROC=$(python -c "import json; print(json.load(open('evaluation_results.json'))['auroc'])")
+        
+        echo "new_accuracy=$NEW_ACCURACY" >> $GITHUB_OUTPUT
+        echo "new_auroc=$NEW_AUROC" >> $GITHUB_OUTPUT
+        
+        echo "New model accuracy: $NEW_ACCURACY"
+        echo "New model AUROC: $NEW_AUROC"
+        
+        # Set minimum performance threshold for deployment
+        MIN_ACCURACY=0.75
+        DEPLOY_MODEL=$(python -c "print('true' if $NEW_ACCURACY >= $MIN_ACCURACY else 'false')")
+        echo "deploy_model=$DEPLOY_MODEL" >> $GITHUB_OUTPUT
+        
+        if [ "$DEPLOY_MODEL" == "true" ]; then
+          echo "New model meets deployment criteria"
+        else
+          echo "New model performance too low for deployment"
+          exit 1
+        fi
+
+    - name: Archive current model
+      if: (steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true') && steps.validate.outputs.deploy_model == 'true'
+      run: |
+        # Create timestamp for archive
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        ARCHIVE_DIR="models/archive/$TIMESTAMP"
+        mkdir -p "$ARCHIVE_DIR"
+        
+        # Archive old model if it exists
+        if [ -f "models/current/model.pkl" ]; then
+          cp models/current/* "$ARCHIVE_DIR/" 2>/dev/null || true
+          echo "Previous model archived to $ARCHIVE_DIR"
+        fi
+
+    - name: Deploy to Railway
+      if: (steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true') && steps.validate.outputs.deploy_model == 'true'
+      run: |
+        echo "Deploying to Railway..."
+        
+        # Install Railway CLI
+        npm install -g @railway/cli
+        
+        # Deploy using Railway CLI
+        railway login --token ${{ secrets.801f5ee7-c20f-4c18-b299-8d088cbaebe3  }}
+        railway deploy --detach
+        
+        # Wait for deployment to complete
+        sleep 60
+        
+        echo "Deployment initiated"
+
+    - name: Post-deployment health check
+      if: (steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true') && steps.validate.outputs.deploy_model == 'true'
+      run: |
+        echo "Running post-deployment health check..."
+        
+        # Wait for service to be ready
+        sleep 30
+        
+        # Test health endpoint
+        HEALTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+          https://frauddetection-production-bfff.up.railway.app/health)
+        
+        if [ "$HEALTH_RESPONSE" == "200" ]; then
+          echo "Health check passed"
+        else
+          echo "Health check failed (HTTP $HEALTH_RESPONSE)"
+          exit 1
+        fi
+        
+        # Test prediction endpoint
+        PRED_RESPONSE=$(curl -s -w "%{http_code}" \
+          -H "Authorization: Bearer ${{ secrets.fraud-detection-secret-2025 }}" \
+          -H "Content-Type: application/json" \
+          -d '{"loan_amount_requested": 50000, "monthly_income": 8000, "applicant_age": 35, "cibil_score": 750, "number_of_dependents": 2}' \
+          https://frauddetection-production-bfff.up.railway.app/predict)
+        
+        HTTP_CODE=$(echo "$PRED_RESPONSE" | tail -c 4)
+        if [ "$HTTP_CODE" == "200" ]; then
+          echo "Prediction endpoint test passed"
+        else
+          echo "Prediction endpoint test failed (HTTP $HTTP_CODE)"
+          exit 1
+        fi
+
+    - name: Update performance history
+      if: always()
+      run: |
+        # Create or update performance history CSV
+        TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+        MONTH="${{ steps.month.outputs.month }}"
+        ACCURACY="${{ steps.evaluate.outputs.accuracy }}"
+        AUROC="${{ steps.evaluate.outputs.auroc }}"
+        RETRAINED="${{ steps.evaluate.outputs.needs_retrain }}"
+        
+        # Create header if file doesn't exist
+        if [ ! -f "metrics/performance_history.csv" ]; then
+          echo "timestamp,month,accuracy,auroc,retrained,notes" > metrics/performance_history.csv
+        fi
+        
+        # Determine notes based on drift
+        NOTES="normal"
+        case $MONTH in
+          06) NOTES="feature_drift_detected" ;;
+          09) NOTES="fraud_rate_increase" ;;
+          11) NOTES="transaction_behavior_drift" ;;
+        esac
+        
+        # Append results
+        echo "$TIMESTAMP,$MONTH,$ACCURACY,$AUROC,$RETRAINED,$NOTES" >> metrics/performance_history.csv
+        
+        echo "Performance history updated"
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: model-evaluation-month-${{ steps.month.outputs.month }}
+        path: |
+          metrics/artifacts/
+          evaluation_results.json
+          metrics/performance_history.csv
+        retention-days: 90
+
+    - name: Commit updated files
+      if: steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add models/current/ metrics/performance_history.csv
+        git commit -m "Model retrained for month ${{ steps.month.outputs.month }}" || exit 0
+        git push
+
+    - name: Summary
+      if: always()
+      run: |
+        echo "## Monthly Evaluation Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Month**: ${{ steps.month.outputs.month }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Accuracy**: ${{ steps.evaluate.outputs.accuracy }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **AUROC**: ${{ steps.evaluate.outputs.auroc }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Performance Drop**: ${{ steps.evaluate.outputs.accuracy_drop }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Retrained**: ${{ steps.evaluate.outputs.needs_retrain }}" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.evaluate.outputs.needs_retrain }}" == "true" ]; then
+          echo "- **Action**: Model retrained and deployed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Action**: ⏸No retraining needed" >> $GITHUB_STEP_SUMMARY
+        fi

@@ -1,0 +1,235 @@
+name: Test Full Year Simulation
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_month:
+        description: 'Starting month (01-12)'
+        required: false
+        default: '01'
+        type: string
+      end_month:
+        description: 'Ending month (01-12)'
+        required: false
+        default: '12'
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+  MLFLOW_TRACKING_URI: file:./mlruns
+  PERFORMANCE_THRESHOLD: 0.05
+
+jobs:
+  simulate-year:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Create directories
+      run: |
+        mkdir -p models/current models/archive metrics/artifacts logs mlruns
+
+    - name: Initialize baseline model
+      run: |
+        echo "Training initial baseline model (months 01-03)..."
+        python -m src.models.train --through 03
+        
+        if [ -f "models/current/model.pkl" ]; then
+          echo "Baseline model created successfully"
+        else
+          echo "Failed to create baseline model"
+          exit 1
+        fi
+
+    - name: Simulate monthly evaluations
+      run: |
+        echo "Starting 12-month simulation..."
+        echo "Month,Accuracy,AUROC,Performance_Drop,Needs_Retrain,Action_Taken" > simulation_results.csv
+        
+        START_MONTH=${{ github.event.inputs.start_month }}
+        END_MONTH=${{ github.event.inputs.end_month }}
+        
+        for MONTH in $(seq -w ${START_MONTH#0} ${END_MONTH#0}); do
+          echo ""
+          echo " Evaluating Month $MONTH..."
+          
+          # Run evaluation
+          python -m src.models.evaluate --month $MONTH --output-json
+          
+          if [ -f "evaluation_results.json" ]; then
+            ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json'))['accuracy'])")
+            AUROC=$(python -c "import json; print(json.load(open('evaluation_results.json'))['auroc'])")
+            BASELINE_ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json')).get('baseline_accuracy', 0.8))")
+            
+            # Calculate performance drop
+            ACCURACY_DROP=$(python -c "print($BASELINE_ACCURACY - $ACCURACY)")
+            NEEDS_RETRAIN=$(python -c "print($ACCURACY_DROP >= ${{ env.PERFORMANCE_THRESHOLD }})")
+            
+            echo "  Accuracy: $ACCURACY"
+            echo "  AUROC: $AUROC"
+            echo "  Performance drop: $ACCURACY_DROP"
+            
+            if [ "$NEEDS_RETRAIN" == "True" ]; then
+              echo "  RETRAINING TRIGGERED - Performance drop detected!"
+              
+              # Perform retraining
+              python -m src.models.train --through $MONTH
+              
+              if [ -f "models/current/model.pkl" ]; then
+                echo "  Retraining completed for month $MONTH"
+                ACTION_TAKEN="retrained"
+                
+                # Re-evaluate with new model
+                python -m src.models.evaluate --month $MONTH --output-json
+                NEW_ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json'))['accuracy'])")
+                NEW_AUROC=$(python -c "import json; print(json.load(open('evaluation_results.json'))['auroc'])")
+                echo "  New model accuracy: $NEW_ACCURACY"
+                echo "  New model AUROC: $NEW_AUROC"
+                
+                # Update values for CSV
+                ACCURACY=$NEW_ACCURACY
+                AUROC=$NEW_AUROC
+              else
+                echo "  Retraining failed"
+                ACTION_TAKEN="retrain_failed"
+              fi
+            else
+              echo "  Model performance acceptable"
+              ACTION_TAKEN="no_action"
+            fi
+            
+            # Log results to CSV
+            echo "$MONTH,$ACCURACY,$AUROC,$ACCURACY_DROP,$NEEDS_RETRAIN,$ACTION_TAKEN" >> simulation_results.csv
+          else
+            echo "  Evaluation failed for month $MONTH"
+            echo "$MONTH,ERROR,ERROR,ERROR,ERROR,evaluation_failed" >> simulation_results.csv
+          fi
+          
+          # Brief pause between months
+          sleep 5
+        done
+        
+        echo ""
+        echo " Complete! Results:"
+        echo "=================================="
+        cat simulation_results.csv
+
+    - name: Generate simulation report
+      run: |
+        python << 'EOF'
+        import pandas as pd
+        import json
+        from datetime import datetime
+        
+        # Read simulation results
+        try:
+            df = pd.read_csv('simulation_results.csv')
+            
+            # Generate summary
+            total_months = len(df)
+            retraining_months = len(df[df['Needs_Retrain'] == True])
+            avg_accuracy = df[df['Accuracy'] != 'ERROR']['Accuracy'].astype(float).mean()
+            
+            # Expected drift months based on simulation
+            expected_drift_months = ['06', '09', '11']
+            detected_drift_months = df[df['Needs_Retrain'] == True]['Month'].astype(str).str.zfill(2).tolist()
+            
+            report = {
+                "simulation_date": datetime.now().isoformat(),
+                "total_months_evaluated": total_months,
+                "retraining_triggered": retraining_months,
+                "average_accuracy": round(avg_accuracy, 4),
+                "expected_drift_months": expected_drift_months,
+                "detected_drift_months": detected_drift_months,
+                "drift_detection_accuracy": len(set(expected_drift_months) & set(detected_drift_months)) / len(expected_drift_months),
+                "summary": f"Successfully detected {len(set(expected_drift_months) & set(detected_drift_months))}/{len(expected_drift_months)} expected drift events"
+            }
+            
+            # Save report
+            with open('simulation_report.json', 'w') as f:
+                json.dump(report, f, indent=2)
+            
+            print("SIMULATION REPORT GENERATED")
+            print("=" * 50)
+            print(f"Months evaluated: {total_months}")
+            print(f"Retraining events: {retraining_months}")
+            print(f"Average accuracy: {avg_accuracy:.4f}")
+            print(f"Expected drift months: {expected_drift_months}")
+            print(f"Detected drift months: {detected_drift_months}")
+            print(f"Drift detection rate: {report['drift_detection_accuracy']:.1%}")
+            
+        except Exception as e:
+            print(f"Error generating report: {e}")
+        EOF
+
+    - name: Upload simulation artifacts
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: year-simulation-results
+        path: |
+          simulation_results.csv
+          simulation_report.json
+          metrics/artifacts/
+          metrics/performance_history.csv
+        retention-days: 180
+
+    - name: Final deployment check
+      if: (steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true') && steps.validate.outputs.deploy_model == 'true'
+      run: |
+        echo "Final API availability check..."
+        sleep 30
+        
+        # Test both endpoints
+        HEALTH_CHECK=$(curl -s -o /dev/null -w "%{http_code}" \
+          https://frauddetection-production-bfff.up.railway.app/health)
+        
+        PREDICT_CHECK=$(curl -s -w "%{http_code}" \
+          -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d '{"loan_amount_requested": 25000, "monthly_income": 5000, "applicant_age": 28, "cibil_score": 680, "number_of_dependents": 1}' \
+          https://frauddetection-production-bfff.up.railway.app/predict)
+        
+        PREDICT_HTTP_CODE=$(echo "$PREDICT_CHECK" | tail -c 4)
+        
+        if [ "$HEALTH_CHECK" == "200" ] && [ "$PREDICT_HTTP_CODE" == "200" ]; then
+          echo "API fully operational after redeployment"
+          echo "MLOps pipeline completed successfully!"
+        else
+          echo "API not responding correctly (Health: $HEALTH_CHECK, Predict: $PREDICT_HTTP_CODE)"
+          exit 1
+        fi
+
+    - name: Summary Report
+      if: always()
+      run: |
+        echo "## MLOps Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+        echo "### Month ${{ steps.month.outputs.month }} Evaluation" >> $GITHUB_STEP_SUMMARY
+        echo "- **Accuracy**: ${{ steps.evaluate.outputs.accuracy }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **AUROC**: ${{ steps.evaluate.outputs.auroc }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Performance Drop**: ${{ steps.evaluate.outputs.accuracy_drop }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Retraining Needed**: ${{ steps.evaluate.outputs.needs_retrain }}" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.evaluate.outputs.needs_retrain }}" == "true" ]; then
+          echo "- **New Model Accuracy**: ${{ steps.validate.outputs.new_accuracy }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Status**: Completed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Action**: No retraining required" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Service Status" >> $GITHUB_STEP_SUMMARY
+        echo "- **API Health**: https://frauddetection-production-bfff.up.railway.app/health" >> $GITHUB_STEP_SUMMARY
+        echo "- **Live Prediction**: Available via POST /predict" >> $GITHUB_STEP_SUMMARY

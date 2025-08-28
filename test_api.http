@@ -1,8 +1,8 @@
 ### Test Health
-GET http://localhost:5000/predict
+GET https://frauddetection-production-bfff.up.railway.app/health
 
 ### Test Prediction (Corrected)
-POST http://localhost:5000/predict
+POST https://frauddetection-production-bfff.up.railway.app/predict
 Authorization: Bearer fraud-detection-secret-2025
 Content-Type: application/json
 
