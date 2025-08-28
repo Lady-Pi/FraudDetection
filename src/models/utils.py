@@ -65,13 +65,25 @@ def load_monthly_data_range(start_month, end_month):
 
 
 def get_standard_features():
-    """Return the top 5 features based on correlation analysis with fraud_flag"""
+    """Return the 14-feature set from notebook 3 analysis"""
     return [
-        'debt_to_income_ratio',  # 0.005644 - highest correlation
-        'applicant_age',  # 0.004846
-        'cibil_score',  # 0.001095
-        'loan_tenure_months',  # -0.000484
-        'existing_emis_monthly'  # -0.000631
+        # Top correlated loan features
+        'debt_to_income_ratio',  # Highest correlation (0.0056)
+        'applicant_age',  # Second highest (0.0048)
+        'cibil_score',  # Credit score
+        'loan_amount_requested',  # Loan amount
+        'monthly_income',  # Income
+        'existing_emis_monthly',  # Existing EMIs
+        'interest_rate_offered',  # Interest rate
+        'loan_tenure_months',  # Loan tenure
+        'number_of_dependents',  # Dependents
+
+        # Transaction aggregations (add predictive power)
+        'trans_transaction_amount_count',  # Number of transactions
+        'trans_transaction_amount_sum',  # Total transaction volume
+        'trans_transaction_amount_mean',  # Average transaction size
+        'trans_transaction_amount_std',  # Transaction variability
+        'trans_fraud_flag_sum'  # Number of fraudulent transactions
     ]
 
 
@@ -202,7 +214,7 @@ def validate_model_artifacts():
 
 
 def get_drift_months():
-    """Return months where drift is expected (for testing)"""
+    """Return months where drift is expected"""
     return [6, 9, 11]
 
 

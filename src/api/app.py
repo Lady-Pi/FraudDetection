@@ -61,80 +61,76 @@ def load_model_artifacts():
         logger.error(f"Failed to load model artifacts: {str(e)}")
         raise
 
-
 def preprocess_features(data):
-    """Preprocess input data to match training format with correlation-based features"""
+    """Preprocess input data to match 14-feature notebook 3 approach"""
     try:
-        # Convert to DataFrame
+        # Convert to DataFrame if it's a dict
         if isinstance(data, dict):
             df = pd.DataFrame([data])
         else:
             df = pd.DataFrame(data)
 
-        # Create the 5 correlation-based model features from API input
+        # Create the 14-feature set from notebook 3
         model_features = pd.DataFrame()
 
-        # debt_to_income_ratio (highest correlation: 0.005644)
-        if 'debt_to_income_ratio' in df.columns:
-            model_features['debt_to_income_ratio'] = df['debt_to_income_ratio']
-        else:
-            # Calculate from existing_emis_monthly / monthly_income
-            existing_emis = df.get('existing_emis_monthly', 0)
-            monthly_income = df['monthly_income']
-            model_features['debt_to_income_ratio'] = existing_emis / monthly_income
-
-        # applicant_age (0.004846)
+        # Loan features (9 features)
+        model_features['debt_to_income_ratio'] = df.get('debt_to_income_ratio',
+                                                        df.get('existing_emis_monthly', 0) / df['monthly_income'])
         model_features['applicant_age'] = df['applicant_age']
-
-        #  cibil_score (0.001095)
         model_features['cibil_score'] = df['cibil_score']
+        model_features['loan_amount_requested'] = df['loan_amount_requested']
+        model_features['monthly_income'] = df['monthly_income']
+        model_features['existing_emis_monthly'] = df.get('existing_emis_monthly', df['monthly_income'] * 0.15)
+        model_features['interest_rate_offered'] = df.get('interest_rate_offered', 10.0)
+        model_features['loan_tenure_months'] = df.get('loan_tenure_months', 24)
+        model_features['number_of_dependents'] = df['number_of_dependents']
 
-        # loan_tenure_months (-0.000484)
-        if 'loan_tenure_months' in df.columns:
-            model_features['loan_tenure_months'] = df['loan_tenure_months']
-        else:
-            # Use reasonable default based on loan amount
-            loan_amount = df.get('loan_amount_requested', 50000)
-            # Larger loans typically have longer tenure
-            default_tenure = 12 + (loan_amount / 10000).clip(0, 48)  # 12-60 months
-            model_features['loan_tenure_months'] = default_tenure.astype(int)
+        # Transaction aggregation features (5 features)
+        # Use defaults if transaction data not provided via API
+        model_features['trans_transaction_amount_count'] = df.get('trans_transaction_amount_count', 30)
+        model_features['trans_transaction_amount_sum'] = df.get('trans_transaction_amount_sum',
+                                                                df['monthly_income'] * 0.8)
+        model_features['trans_transaction_amount_mean'] = df.get('trans_transaction_amount_mean',
+                                                                 model_features['trans_transaction_amount_sum'] /
+                                                                 model_features['trans_transaction_amount_count'])
+        model_features['trans_transaction_amount_std'] = df.get('trans_transaction_amount_std',
+                                                                model_features['trans_transaction_amount_mean'] * 0.5)
+        model_features['trans_fraud_flag_sum'] = df.get('trans_fraud_flag_sum', 0)
 
-        # existing_emis_monthly (-0.000631)
-        if 'existing_emis_monthly' in df.columns:
-            model_features['existing_emis_monthly'] = df['existing_emis_monthly']
-        else:
-            # Calculate based on income (assume 10-30% of income for existing EMIs)
-            monthly_income = df['monthly_income']
-            # Conservative estimate: 15% of income
-            model_features['existing_emis_monthly'] = monthly_income * 0.15
-
-        # Ensure feature order matches training
+        # Ensure feature order matches training (14 features from notebook 3)
         feature_columns_ordered = [
             'debt_to_income_ratio',
             'applicant_age',
             'cibil_score',
+            'loan_amount_requested',
+            'monthly_income',
+            'existing_emis_monthly',
+            'interest_rate_offered',
             'loan_tenure_months',
-            'existing_emis_monthly'
+            'number_of_dependents',
+            'trans_transaction_amount_count',
+            'trans_transaction_amount_sum',
+            'trans_transaction_amount_mean',
+            'trans_transaction_amount_std',
+            'trans_fraud_flag_sum'
         ]
 
         # Select features in correct order
         df_final = model_features[feature_columns_ordered]
 
-        # Handle missing values
+        # Handle any remaining missing values
         df_final = df_final.fillna(0)
 
         # Scale features using loaded scaler
         df_scaled = scaler.transform(df_final)
 
-        logger.info(f"Preprocessed {len(df_final)} records with correlation-based features")
-        logger.debug(f"Feature means: {df_final.mean().to_dict()}")
+        logger.info(f"Preprocessed {len(df_final)} records with 14-feature notebook 3 approach")
 
         return df_scaled
 
     except Exception as e:
         logger.error(f"Preprocessing failed: {str(e)}")
         raise ValueError(f"Data preprocessing error: {str(e)}")
-
 
 @app.route('/health', methods=['GET'])
 def health_check():
