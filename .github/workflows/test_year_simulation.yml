@@ -43,19 +43,19 @@ jobs:
 
     - name: Initialize baseline model
       run: |
-        echo "Training initial baseline model (months 01-03)..."
+        echo "🚀 Training initial baseline model (months 01-03)..."
         python -m src.models.train --through 03
         
         if [ -f "models/current/model.pkl" ]; then
-          echo "Baseline model created successfully"
+          echo "✅ Baseline model created successfully"
         else
-          echo "Failed to create baseline model"
+          echo "❌ Failed to create baseline model"
           exit 1
         fi
 
     - name: Simulate monthly evaluations
       run: |
-        echo "Starting 12-month simulation..."
+        echo "📅 Starting 12-month simulation..."
         echo "Month,Accuracy,AUROC,Performance_Drop,Needs_Retrain,Action_Taken" > simulation_results.csv
         
         START_MONTH=${{ github.event.inputs.start_month }}
@@ -63,7 +63,7 @@ jobs:
         
         for MONTH in $(seq -w ${START_MONTH#0} ${END_MONTH#0}); do
           echo ""
-          echo " Evaluating Month $MONTH..."
+          echo "🔍 Evaluating Month $MONTH..."
           
           # Run evaluation
           python -m src.models.evaluate --month $MONTH --output-json
@@ -77,43 +77,43 @@ jobs:
             ACCURACY_DROP=$(python -c "print($BASELINE_ACCURACY - $ACCURACY)")
             NEEDS_RETRAIN=$(python -c "print($ACCURACY_DROP >= ${{ env.PERFORMANCE_THRESHOLD }})")
             
-            echo "  Accuracy: $ACCURACY"
-            echo "  AUROC: $AUROC"
-            echo "  Performance drop: $ACCURACY_DROP"
+            echo "  📊 Accuracy: $ACCURACY"
+            echo "  📊 AUROC: $AUROC"
+            echo "  📉 Performance drop: $ACCURACY_DROP"
             
             if [ "$NEEDS_RETRAIN" == "True" ]; then
-              echo "  RETRAINING TRIGGERED - Performance drop detected!"
+              echo "  🔄 RETRAINING TRIGGERED - Performance drop detected!"
               
               # Perform retraining
               python -m src.models.train --through $MONTH
               
               if [ -f "models/current/model.pkl" ]; then
-                echo "  Retraining completed for month $MONTH"
+                echo "  ✅ Retraining completed for month $MONTH"
                 ACTION_TAKEN="retrained"
                 
                 # Re-evaluate with new model
                 python -m src.models.evaluate --month $MONTH --output-json
                 NEW_ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json'))['accuracy'])")
                 NEW_AUROC=$(python -c "import json; print(json.load(open('evaluation_results.json'))['auroc'])")
-                echo "  New model accuracy: $NEW_ACCURACY"
-                echo "  New model AUROC: $NEW_AUROC"
+                echo "  📈 New model accuracy: $NEW_ACCURACY"
+                echo "  📈 New model AUROC: $NEW_AUROC"
                 
                 # Update values for CSV
                 ACCURACY=$NEW_ACCURACY
                 AUROC=$NEW_AUROC
               else
-                echo "  Retraining failed"
+                echo "  ❌ Retraining failed"
                 ACTION_TAKEN="retrain_failed"
               fi
             else
-              echo "  Model performance acceptable"
+              echo "  ✅ Model performance acceptable"
               ACTION_TAKEN="no_action"
             fi
             
             # Log results to CSV
             echo "$MONTH,$ACCURACY,$AUROC,$ACCURACY_DROP,$NEEDS_RETRAIN,$ACTION_TAKEN" >> simulation_results.csv
           else
-            echo "  Evaluation failed for month $MONTH"
+            echo "  ❌ Evaluation failed for month $MONTH"
             echo "$MONTH,ERROR,ERROR,ERROR,ERROR,evaluation_failed" >> simulation_results.csv
           fi
           
@@ -122,7 +122,7 @@ jobs:
         done
         
         echo ""
-        echo " Complete! Results:"
+        echo "📋 Simulation Complete! Results:"
         echo "=================================="
         cat simulation_results.csv
 
@@ -142,7 +142,7 @@ jobs:
             retraining_months = len(df[df['Needs_Retrain'] == True])
             avg_accuracy = df[df['Accuracy'] != 'ERROR']['Accuracy'].astype(float).mean()
             
-            # Expected drift months based on simulation
+            # Expected drift months based on your simulation
             expected_drift_months = ['06', '09', '11']
             detected_drift_months = df[df['Needs_Retrain'] == True]['Month'].astype(str).str.zfill(2).tolist()
             
@@ -161,7 +161,7 @@ jobs:
             with open('simulation_report.json', 'w') as f:
                 json.dump(report, f, indent=2)
             
-            print("SIMULATION REPORT GENERATED")
+            print("📊 SIMULATION REPORT GENERATED")
             print("=" * 50)
             print(f"Months evaluated: {total_months}")
             print(f"Retraining events: {retraining_months}")
@@ -175,7 +175,7 @@ jobs:
         EOF
 
     - name: Upload simulation artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: year-simulation-results
@@ -189,7 +189,7 @@ jobs:
     - name: Final deployment check
       if: (steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true') && steps.validate.outputs.deploy_model == 'true'
       run: |
-        echo "Final API availability check..."
+        echo "🏥 Final API availability check..."
         sleep 30
         
         # Test both endpoints
@@ -205,17 +205,17 @@ jobs:
         PREDICT_HTTP_CODE=$(echo "$PREDICT_CHECK" | tail -c 4)
         
         if [ "$HEALTH_CHECK" == "200" ] && [ "$PREDICT_HTTP_CODE" == "200" ]; then
-          echo "API fully operational after redeployment"
-          echo "MLOps pipeline completed successfully!"
+          echo "✅ API fully operational after redeployment"
+          echo "🎉 MLOps pipeline completed successfully!"
         else
-          echo "API not responding correctly (Health: $HEALTH_CHECK, Predict: $PREDICT_HTTP_CODE)"
+          echo "❌ API not responding correctly (Health: $HEALTH_CHECK, Predict: $PREDICT_HTTP_CODE)"
           exit 1
         fi
 
     - name: Summary Report
       if: always()
       run: |
-        echo "## MLOps Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+        echo "## 🎯 MLOps Pipeline Summary" >> $GITHUB_STEP_SUMMARY
         echo "### Month ${{ steps.month.outputs.month }} Evaluation" >> $GITHUB_STEP_SUMMARY
         echo "- **Accuracy**: ${{ steps.evaluate.outputs.accuracy }}" >> $GITHUB_STEP_SUMMARY
         echo "- **AUROC**: ${{ steps.evaluate.outputs.auroc }}" >> $GITHUB_STEP_SUMMARY
@@ -224,12 +224,12 @@ jobs:
         
         if [ "${{ steps.evaluate.outputs.needs_retrain }}" == "true" ]; then
           echo "- **New Model Accuracy**: ${{ steps.validate.outputs.new_accuracy }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Deployment Status**: Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Status**: ✅ Completed" >> $GITHUB_STEP_SUMMARY
         else
           echo "- **Action**: No retraining required" >> $GITHUB_STEP_SUMMARY
         fi
         
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Service Status" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔗 Service Status" >> $GITHUB_STEP_SUMMARY
         echo "- **API Health**: https://frauddetection-production-bfff.up.railway.app/health" >> $GITHUB_STEP_SUMMARY
         echo "- **Live Prediction**: Available via POST /predict" >> $GITHUB_STEP_SUMMARY
