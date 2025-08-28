@@ -286,16 +286,23 @@ def main():
         logger.error(f"Evaluation failed: {e}")
         # Output error results for GitHub Actions
         if args.output_json:
+            # Try to get the baseline even if evaluation failed
+            try:
+                baseline_accuracy = get_baseline_performance()
+            except:
+                baseline_accuracy = 0.8
+
             error_result = {
                 "accuracy": "ERROR",
                 "auroc": "ERROR",
-                "baseline_accuracy": 0.8,
+                "baseline_accuracy": baseline_accuracy,
                 "performance_drop": "ERROR",
                 "error": str(e)
             }
             with open("evaluation_results.json", "w") as f:
                 json.dump(error_result, f, indent=2)
         raise
+
 
 
 if __name__ == "__main__":

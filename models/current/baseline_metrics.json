@@ -1,0 +1,13 @@
+{
+  "accuracy": 0.9203263738900888,
+  "auroc": 0.9205029689137268,
+  "precision": 0.16,
+  "recall": 0.7792207792207793,
+  "f1": 0.26548672566371684,
+  "training_months": "01-03",
+  "validation_month": "04",
+  "model_type": "LogisticRegression",
+  "timestamp": "2025-08-28T18:32:58.308377",
+  "n_samples_train": 12501,
+  "n_samples_val": 4167
+}
