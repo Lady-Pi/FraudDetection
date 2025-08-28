@@ -63,35 +63,71 @@ def load_model_artifacts():
 
 
 def preprocess_features(data):
-    """Preprocess input data to match training format"""
+    """Preprocess input data to match training format with correlation-based features"""
     try:
-        # Convert to DataFrame if it's a dict
+        # Convert to DataFrame
         if isinstance(data, dict):
             df = pd.DataFrame([data])
         else:
             df = pd.DataFrame(data)
 
-        # Apply categorical encoders
-        for column, encoder in encoders.items():
-            if column in df.columns:
-                # Handle unseen categories
-                try:
-                    df[column] = encoder.transform(df[column])
-                except ValueError:
-                    # Use most frequent category for unseen values
-                    logger.warning(f"Unseen category in {column}, using default")
-                    df[column] = encoder.transform([encoder.classes_[0]] * len(df))
+        # Create the 5 correlation-based model features from API input
+        model_features = pd.DataFrame()
 
-        # Ensure all required features are present
-        for col in feature_columns:
-            if col not in df.columns:
-                df[col] = 0  # Default value for missing features
+        # debt_to_income_ratio (highest correlation: 0.005644)
+        if 'debt_to_income_ratio' in df.columns:
+            model_features['debt_to_income_ratio'] = df['debt_to_income_ratio']
+        else:
+            # Calculate from existing_emis_monthly / monthly_income
+            existing_emis = df.get('existing_emis_monthly', 0)
+            monthly_income = df['monthly_income']
+            model_features['debt_to_income_ratio'] = existing_emis / monthly_income
 
-        # Select and order features to match training
-        df = df[feature_columns]
+        # applicant_age (0.004846)
+        model_features['applicant_age'] = df['applicant_age']
 
-        # Scale features
-        df_scaled = scaler.transform(df)
+        #  cibil_score (0.001095)
+        model_features['cibil_score'] = df['cibil_score']
+
+        # loan_tenure_months (-0.000484)
+        if 'loan_tenure_months' in df.columns:
+            model_features['loan_tenure_months'] = df['loan_tenure_months']
+        else:
+            # Use reasonable default based on loan amount
+            loan_amount = df.get('loan_amount_requested', 50000)
+            # Larger loans typically have longer tenure
+            default_tenure = 12 + (loan_amount / 10000).clip(0, 48)  # 12-60 months
+            model_features['loan_tenure_months'] = default_tenure.astype(int)
+
+        # existing_emis_monthly (-0.000631)
+        if 'existing_emis_monthly' in df.columns:
+            model_features['existing_emis_monthly'] = df['existing_emis_monthly']
+        else:
+            # Calculate based on income (assume 10-30% of income for existing EMIs)
+            monthly_income = df['monthly_income']
+            # Conservative estimate: 15% of income
+            model_features['existing_emis_monthly'] = monthly_income * 0.15
+
+        # Ensure feature order matches training
+        feature_columns_ordered = [
+            'debt_to_income_ratio',
+            'applicant_age',
+            'cibil_score',
+            'loan_tenure_months',
+            'existing_emis_monthly'
+        ]
+
+        # Select features in correct order
+        df_final = model_features[feature_columns_ordered]
+
+        # Handle missing values
+        df_final = df_final.fillna(0)
+
+        # Scale features using loaded scaler
+        df_scaled = scaler.transform(df_final)
+
+        logger.info(f"Preprocessed {len(df_final)} records with correlation-based features")
+        logger.debug(f"Feature means: {df_final.mean().to_dict()}")
 
         return df_scaled
 
