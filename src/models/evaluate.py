@@ -59,36 +59,73 @@ def load_model_artifacts():
 
 
 def load_evaluation_data(month):
-    """Load data for specified month"""
+    """Load data for specified month including transactions"""
     month_str = f"{month:02d}"
     month_dir = DATA_DIR / month_str
 
     loans_file = month_dir / "loan_applications.csv"
+    trans_file = month_dir / "transactions.csv"
 
     if not loans_file.exists():
-        raise FileNotFoundError(f"Data not found for month {month_str}")
+        raise FileNotFoundError(f"Loan data not found for month {month_str}")
+
+    if not trans_file.exists():
+        raise FileNotFoundError(f"Transaction data not found for month {month_str}")
 
     loans_df = pd.read_csv(loans_file)
-    logger.info(f"Loaded evaluation data for month {month_str}: {len(loans_df)} records")
+    transactions_df = pd.read_csv(trans_file)
 
-    return loans_df
+    logger.info(
+        f"Loaded evaluation data for month {month_str}: {len(loans_df)} loans, {len(transactions_df)} transactions")
+
+    return loans_df, transactions_df
 
 
-def preprocess_evaluation_data(loans_df, feature_columns):
-    """Preprocess evaluation data to match training format"""
+def engineer_features(loans_df, transactions_df):
+    """Create features for fraud detection model (matching notebook 3)"""
+
+    # Start with loan application features
+    features_df = loans_df.copy()
+
+    # Transaction aggregations per customer
+    trans_agg = transactions_df.groupby('customer_id').agg({
+        'transaction_amount': ['count', 'sum', 'mean', 'std', 'max'],
+        'fraud_flag': 'sum'  # Number of fraudulent transactions
+    }).round(3)
+
+    # Flatten column names
+    trans_agg.columns = [f'trans_{col[0]}_{col[1]}' if col[1] else f'trans_{col[0]}'
+                         for col in trans_agg.columns]
+    trans_agg = trans_agg.fillna(0)
+
+    # Merge with loan data
+    features_df = features_df.merge(trans_agg, on='customer_id', how='left')
+
+    # Fill missing transaction data (customers with no transactions)
+    trans_cols = [col for col in features_df.columns if col.startswith('trans_')]
+    features_df[trans_cols] = features_df[trans_cols].fillna(0)
+
+    return features_df
+
+
+def preprocess_evaluation_data(loans_df, transactions_df, feature_columns):
+    """Preprocess evaluation data to match training format (notebook 3 approach)"""
+
+    # Engineer features using same logic as training
+    features_df = engineer_features(loans_df, transactions_df)
 
     # Ensure all feature columns exist
     for col in feature_columns:
-        if col not in loans_df.columns:
+        if col not in features_df.columns:
             logger.warning(f"Missing feature {col}, setting to 0")
-            loans_df[col] = 0
+            features_df[col] = 0
 
     # Handle missing values
-    loans_df[feature_columns] = loans_df[feature_columns].fillna(0)
+    features_df[feature_columns] = features_df[feature_columns].fillna(0)
 
     # Create feature matrix
-    X = loans_df[feature_columns].copy()
-    y = loans_df['fraud_flag'].copy()
+    X = features_df[feature_columns].copy()
+    y = features_df['fraud_flag'].copy()
 
     return X, y
 
@@ -155,7 +192,7 @@ def save_artifacts(metrics, month, metadata):
     # Create artifacts directory
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Save confusion matrix as text
+    # Save confusion matrix as simple text
     cm_file = ARTIFACTS_DIR / f"confusion_matrix_month_{month:02d}.txt"
     with open(cm_file, "w") as f:
         f.write(f"Confusion Matrix - Month {month:02d}\n")
@@ -212,10 +249,10 @@ def main():
         model, scaler, encoders, metadata, feature_columns = load_model_artifacts()
 
         # Load evaluation data
-        loans_df = load_evaluation_data(args.month)
+        loans_df, transactions_df = load_evaluation_data(args.month)
 
         # Preprocess data
-        X, y = preprocess_evaluation_data(loans_df, feature_columns)
+        X, y = preprocess_evaluation_data(loans_df, transactions_df, feature_columns)
 
         # Evaluate model
         metrics = evaluate_model(model, scaler, X, y)
