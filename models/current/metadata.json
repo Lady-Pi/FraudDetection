@@ -1,6 +1,6 @@
 {
   "model_type": "LogisticRegression",
-  "training_date": "2025-08-26T16:15:14",
+  "training_date": "2025-08-28T18:32:59",
   "training_months": "01-03",
   "validation_month": "04",
   "features": [

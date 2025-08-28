@@ -167,23 +167,17 @@ def evaluate_model(model, scaler, X, y):
 
 
 def get_baseline_performance():
-    """Get baseline performance from previous evaluations"""
+    """Get baseline accuracy from stored metrics"""
+    baseline_file = CURRENT_DIR / "baseline_metrics.json"
 
-    # Try to read from performance history
-    history_file = METRICS_DIR / "performance_history.csv"
-
-    if history_file.exists():
-        try:
-            history_df = pd.read_csv(history_file)
-            if len(history_df) > 0:
-                # Get most recent baseline
-                latest_accuracy = history_df['accuracy'].iloc[-1]
-                return float(latest_accuracy)
-        except Exception as e:
-            logger.warning(f"Could not read performance history: {e}")
-
-    # Default baseline if no history exists
-    return 0.80  # Default baseline accuracy
+    if baseline_file.exists():
+        with open(baseline_file, "r") as f:
+            baseline_data = json.load(f)
+        return float(baseline_data['accuracy'])
+    else:
+        # Fallback for backward compatibility
+        logger.warning("No baseline metrics found, using default 0.8")
+        return 0.8
 
 
 def save_artifacts(metrics, month, metadata):
