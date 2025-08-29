@@ -282,12 +282,11 @@ def main():
         else:
             print("Model performance acceptable")
 
-
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
         # Output error results for GitHub Actions
         if args.output_json:
-            # Try to get the baseline even if evaluation failed
+            # Try to get the actual baseline even if evaluation failed
             try:
                 baseline_accuracy = get_baseline_performance()
             except:
@@ -302,10 +301,7 @@ def main():
             }
             with open("evaluation_results.json", "w") as f:
                 json.dump(error_result, f, indent=2)
-        # Don't re-raise the exception - let GitHub Actions continue
-        print(f"Evaluation failed: {e}")
-        return
-
+        raise
 
 if __name__ == "__main__":
     main()
