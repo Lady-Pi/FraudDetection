@@ -65,7 +65,6 @@ jobs:
           echo ""
           echo "Evaluating Month $MONTH..."
           
-          # Run evaluation
           python -m src.models.evaluate --month $MONTH --output-json
           
           if [ -f "evaluation_results.json" ]; then
@@ -73,7 +72,6 @@ jobs:
             AUROC=$(python -c "import json; print(json.load(open('evaluation_results.json'))['auroc'])")
             BASELINE_ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json')).get('baseline_accuracy', 0.8))")
             
-            # Calculate performance drop
             ACCURACY_DROP=$(python -c "print($BASELINE_ACCURACY - $ACCURACY)")
             NEEDS_RETRAIN=$(python -c "print($ACCURACY_DROP >= ${{ env.PERFORMANCE_THRESHOLD }})")
             
@@ -84,21 +82,18 @@ jobs:
             if [ "$NEEDS_RETRAIN" == "True" ]; then
               echo "  RETRAINING TRIGGERED - Performance drop detected!"
               
-              # Perform retraining
               python -m src.models.train --through $MONTH
               
               if [ -f "models/current/model.pkl" ]; then
                 echo "  Retraining completed for month $MONTH"
                 ACTION_TAKEN="retrained"
                 
-                # Re-evaluate with new model
                 python -m src.models.evaluate --month $MONTH --output-json
                 NEW_ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json'))['accuracy'])")
                 NEW_AUROC=$(python -c "import json; print(json.load(open('evaluation_results.json'))['auroc'])")
                 echo "  New model accuracy: $NEW_ACCURACY"
                 echo "  New model AUROC: $NEW_AUROC"
                 
-                # Update values for CSV
                 ACCURACY=$NEW_ACCURACY
                 AUROC=$NEW_AUROC
               else
@@ -110,14 +105,12 @@ jobs:
               ACTION_TAKEN="no_action"
             fi
             
-            # Log results to CSV
             echo "$MONTH,$ACCURACY,$AUROC,$ACCURACY_DROP,$NEEDS_RETRAIN,$ACTION_TAKEN" >> simulation_results.csv
           else
             echo "  Evaluation failed for month $MONTH"
             echo "$MONTH,ERROR,ERROR,ERROR,ERROR,evaluation_failed" >> simulation_results.csv
           fi
           
-          # Brief pause between months
           sleep 5
         done
         
@@ -133,16 +126,13 @@ jobs:
         import json
         from datetime import datetime
         
-        # Read simulation results
         try:
             df = pd.read_csv('simulation_results.csv')
             
-            # Generate summary
             total_months = len(df)
             retraining_months = len(df[df['Needs_Retrain'] == True])
             avg_accuracy = df[df['Accuracy'] != 'ERROR']['Accuracy'].astype(float).mean()
             
-            # Expected drift months based on your simulation
             expected_drift_months = ['06', '09', '11']
             detected_drift_months = df[df['Needs_Retrain'] == True]['Month'].astype(str).str.zfill(2).tolist()
             
@@ -157,7 +147,6 @@ jobs:
                 "summary": f"Successfully detected {len(set(expected_drift_months) & set(detected_drift_months))}/{len(expected_drift_months)} expected drift events"
             }
             
-            # Save report
             with open('simulation_report.json', 'w') as f:
                 json.dump(report, f, indent=2)
             
@@ -192,11 +181,9 @@ jobs:
         echo "## MLOps Pipeline - Full Year Simulation Results" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         
-        # Read simulation results
         if [ -f "simulation_results.csv" ]; then
           echo "### Simulation Overview" >> $GITHUB_STEP_SUMMARY
           
-          # Calculate summary statistics
           TOTAL_MONTHS=$(tail -n +2 simulation_results.csv | wc -l)
           RETRAIN_COUNT=$(tail -n +2 simulation_results.csv | grep -c "TRUE")
           SUCCESSFUL_MONTHS=$(tail -n +2 simulation_results.csv | grep -cv "ERROR")
@@ -206,14 +193,12 @@ jobs:
           echo "- **Retraining events triggered**: $RETRAIN_COUNT" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Monthly performance breakdown
           echo "### Monthly Performance Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Month | Accuracy | AUROC | Performance Drop | Retrain Triggered | Action Taken |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|----------|-------|------------------|-------------------|--------------|" >> $GITHUB_STEP_SUMMARY
           
           tail -n +2 simulation_results.csv | while IFS=',' read -r month accuracy auroc perf_drop needs_retrain action; do
-            # Format numbers for display
-            if [ "$accuracy" != "ERROR" ]; then
+            if [ "$accuracy" != "ERROR" ] && [ -n "$accuracy" ]; then
               FORMATTED_ACC=$(printf "%.3f" "$accuracy" 2>/dev/null || echo "$accuracy")
               FORMATTED_AUROC=$(printf "%.3f" "$auroc" 2>/dev/null || echo "$auroc")
               FORMATTED_DROP=$(printf "%.4f" "$perf_drop" 2>/dev/null || echo "$perf_drop")
@@ -227,75 +212,33 @@ jobs:
           done
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Drift detection analysis
           echo "### Drift Detection Analysis" >> $GITHUB_STEP_SUMMARY
           
-          # Expected drift months based on your simulation design
           EXPECTED_DRIFT="06 09 11"
           DETECTED_DRIFT=$(tail -n +2 simulation_results.csv | awk -F',' '$5=="TRUE" {printf "%02d ", $1}' | xargs)
           
           echo "- **Expected drift months**: $EXPECTED_DRIFT" >> $GITHUB_STEP_SUMMARY
-          echo "- **Detected drift months**: $DETECTED_DRIFT" >> $GITHUB_STEP_SUMMARY
+          echo "- **Detected drift months**: ${DETECTED_DRIFT:-None}" >> $GITHUB_STEP_SUMMARY
           
-          # Calculate detection accuracy
-          if [ ! -z "$DETECTED_DRIFT" ]; then
+          if [ -n "$DETECTED_DRIFT" ]; then
             DETECTED_COUNT=0
             for expected in $EXPECTED_DRIFT; do
               if echo "$DETECTED_DRIFT" | grep -q "$expected"; then
                 DETECTED_COUNT=$((DETECTED_COUNT + 1))
               fi
             done
-            EXPECTED_COUNT=$(echo $EXPECTED_DRIFT | wc -w)
-            DETECTION_RATE=$(echo "scale=1; $DETECTED_COUNT * 100 / $EXPECTED_COUNT" | bc -l 2>/dev/null || echo "N/A")
-            echo "- **Drift detection accuracy**: $DETECTED_COUNT/$EXPECTED_COUNT ($DETECTION_RATE%)" >> $GITHUB_STEP_SUMMARY
+            DETECTION_RATE=$(python3 -c "print(f'{$DETECTED_COUNT * 100 / 3:.1f}')")
+            echo "- **Drift detection accuracy**: $DETECTED_COUNT/3 ($DETECTION_RATE%)" >> $GITHUB_STEP_SUMMARY
           else
-            echo "- **Drift detection accuracy**: 0/3 (0%)" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Performance trends
-          echo "### Performance Analysis" >> $GITHUB_STEP_SUMMARY
-          
-          # Calculate average metrics (excluding ERROR rows)
-          AVG_ACCURACY=$(tail -n +2 simulation_results.csv | awk -F',' '$2!="ERROR" {sum+=$2; count++} END {if(count>0) printf "%.3f", sum/count; else print "N/A"}')
-          AVG_AUROC=$(tail -n +2 simulation_results.csv | awk -F',' '$3!="ERROR" {sum+=$3; count++} END {if(count>0) printf "%.3f", sum/count; else print "N/A"}')
-          MAX_DROP=$(tail -n +2 simulation_results.csv | awk -F',' '$4!="ERROR" {if($4>max || max=="") max=$4} END {if(max!="") printf "%.4f", max; else print "N/A"}')
-          
-          echo "- **Average accuracy across year**: $AVG_ACCURACY" >> $GITHUB_STEP_SUMMARY
-          echo "- **Average AUROC across year**: $AVG_AUROC" >> $GITHUB_STEP_SUMMARY
-          echo "- **Maximum performance drop**: $MAX_DROP" >> $GITHUB_STEP_SUMMARY
-          echo "- **Performance threshold**: ${{ env.PERFORMANCE_THRESHOLD }}" >> $GITHUB_STEP_SUMMARY
-          
-          # Retraining effectiveness
-          if [ "$RETRAIN_COUNT" -gt 0 ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Retraining Effectiveness" >> $GITHUB_STEP_SUMMARY
-            
-            RETRAIN_MONTHS=$(tail -n +2 simulation_results.csv | awk -F',' '$5=="TRUE" {print $1}' | tr '\n' ' ')
-            echo "- **Months where retraining occurred**: $RETRAIN_MONTHS" >> $GITHUB_STEP_SUMMARY
-            
-            # Check if retraining improved performance in subsequent months
-            SUCCESSFUL_RETRAINS=$(tail -n +2 simulation_results.csv | grep -c "retrained")
-            FAILED_RETRAINS=$(tail -n +2 simulation_results.csv | grep -c "retrain_failed")
-            
-            echo "- **Successful retraining operations**: $SUCCESSFUL_RETRAINS" >> $GITHUB_STEP_SUMMARY
-            echo "- **Failed retraining operations**: $FAILED_RETRAINS" >> $GITHUB_STEP_SUMMARY
+            echo "- **Drift detection accuracy**: 0/3 (0.0%)" >> $GITHUB_STEP_SUMMARY
           fi
           
         else
           echo "### Error" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: Simulation results file not found" >> $GITHUB_STEP_SUMMARY
-          echo "- **Action**: Check simulation execution logs" >> $GITHUB_STEP_SUMMARY
         fi
         
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Service Status" >> $GITHUB_STEP_SUMMARY
         echo "- **API Health**: https://frauddetection-production-bfff.up.railway.app/health" >> $GITHUB_STEP_SUMMARY
-        echo "- **Live Prediction**: Available via POST /predict" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Artifacts Generated" >> $GITHUB_STEP_SUMMARY
-        echo "- simulation_results.csv: Monthly performance data" >> $GITHUB_STEP_SUMMARY
-        echo "- simulation_report.json: Detailed analysis report" >> $GITHUB_STEP_SUMMARY
-        echo "- metrics/artifacts/: Performance plots and confusion matrices" >> $GITHUB_STEP_SUMMARYUMMARY
+        echo "- **Live Prediction**: Available via POST /predict" >> $GITHUB_STEP_SUMMARYion matrices" >> $GITHUB_STEP_SUMMARYe plots and confusion matrices" >> $GITHUB_STEP_SUMMARY
