@@ -15,24 +15,42 @@ from datetime import datetime
 from sklearn.metrics import accuracy_score, roc_auc_score, classification_report, confusion_matrix
 import logging
 
+# Import from utils
+from .utils import (
+    get_standard_features,
+    get_project_paths,
+    calculate_performance_metrics,
+    save_performance_history,
+    determine_drift_type
+)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Project paths
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data" / "monthly"
-MODELS_DIR = PROJECT_ROOT / "models"
-CURRENT_DIR = MODELS_DIR / "current"
-METRICS_DIR = PROJECT_ROOT / "metrics"
-ARTIFACTS_DIR = METRICS_DIR / "artifacts"
-MLRUNS_DIR = PROJECT_ROOT / "mlruns"
+# Get project paths
+paths = get_project_paths()
+CURRENT_DIR = paths['CURRENT_DIR']
+DATA_DIR = paths['DATA_DIR']
+ARTIFACTS_DIR = paths['METRICS_DIR'] / "artifacts"
+
+# Ensure directories exist
+ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def setup_mlflow():
-    """Initialize MLflow tracking"""
-    mlflow.set_tracking_uri(MLRUNS_DIR.as_uri())
-    mlflow.set_experiment("fraud_detection_evaluation")
+    """Initialize MLflow tracking (matching train.py pattern)"""
+    try:
+        mlflow.set_tracking_uri("file:./mlruns")
+        experiment_name = "fraud-detection"
+        try:
+            mlflow.get_experiment_by_name(experiment_name)
+        except:
+            mlflow.create_experiment(experiment_name)
+        mlflow.set_experiment(experiment_name)
+        logger.info("MLflow setup completed")
+    except Exception as e:
+        logger.warning(f"MLflow setup failed: {e}")
 
 
 def load_model_artifacts():
@@ -45,7 +63,7 @@ def load_model_artifacts():
         with open(CURRENT_DIR / "metadata.json", "r") as f:
             metadata = json.load(f)
 
-        feature_columns = metadata.get('features', [])
+        feature_columns = metadata.get('features', get_standard_features())
 
         logger.info(f"Model artifacts loaded: {metadata.get('version', 'unknown')}")
         return model, scaler, encoders, metadata, feature_columns
@@ -82,20 +100,19 @@ def load_evaluation_data(month):
 
 
 def engineer_features(loans_df, transactions_df):
-    """Create features for fraud detection model (matching notebook 3)"""
+    """Create features for fraud detection model (matching train.py exactly)"""
 
     # Start with loan application features
     features_df = loans_df.copy()
 
-    # Transaction aggregations per customer
+    # Transaction aggregations per customer - MATCH TRAIN.PY EXACTLY
     trans_agg = transactions_df.groupby('customer_id').agg({
-        'transaction_amount': ['count', 'sum', 'mean', 'std', 'max'],
+        'transaction_amount': ['count', 'sum', 'mean', 'std'],  # Remove 'max' to match train.py
         'fraud_flag': 'sum'  # Number of fraudulent transactions
     }).round(3)
 
-    # Flatten column names
-    trans_agg.columns = [f'trans_{col[0]}_{col[1]}' if col[1] else f'trans_{col[0]}'
-                         for col in trans_agg.columns]
+    # Flatten column names to match train.py
+    trans_agg.columns = [f'trans_{col[0]}_{col[1]}' for col in trans_agg.columns]
     trans_agg = trans_agg.fillna(0)
 
     # Merge with loan data
@@ -109,7 +126,7 @@ def engineer_features(loans_df, transactions_df):
 
 
 def preprocess_evaluation_data(loans_df, transactions_df, feature_columns):
-    """Preprocess evaluation data to match training format (notebook 3 approach)"""
+    """Preprocess evaluation data to match training format"""
 
     # Engineer features using same logic as training
     features_df = engineer_features(loans_df, transactions_df)
@@ -204,21 +221,24 @@ def save_artifacts(metrics, month, metadata):
 def log_to_mlflow(metrics, month, metadata):
     """Log evaluation to MLflow"""
 
-    with mlflow.start_run():
-        # Log parameters
-        mlflow.log_param("evaluation_month", month)
-        mlflow.log_param("model_version", metadata.get('version', 'unknown'))
-        mlflow.log_param("sample_count", metrics['sample_count'])
+    try:
+        with mlflow.start_run():
+            # Log parameters
+            mlflow.log_param("evaluation_month", month)
+            mlflow.log_param("model_version", metadata.get('version', 'unknown'))
+            mlflow.log_param("sample_count", metrics['sample_count'])
 
-        # Log metrics
-        mlflow.log_metric("accuracy", metrics['accuracy'])
-        mlflow.log_metric("auroc", metrics['auroc'])
-        mlflow.log_metric("precision", metrics['precision'])
-        mlflow.log_metric("recall", metrics['recall'])
-        mlflow.log_metric("f1_score", metrics['f1_score'])
-        mlflow.log_metric("fraud_rate", metrics['fraud_rate'])
+            # Log metrics
+            mlflow.log_metric("accuracy", metrics['accuracy'])
+            mlflow.log_metric("auroc", metrics['auroc'])
+            mlflow.log_metric("precision", metrics['precision'])
+            mlflow.log_metric("recall", metrics['recall'])
+            mlflow.log_metric("f1_score", metrics['f1_score'])
+            mlflow.log_metric("fraud_rate", metrics['fraud_rate'])
 
-        logger.info("Evaluation logged to MLflow")
+            logger.info("Evaluation logged to MLflow")
+    except Exception as e:
+        logger.warning(f"MLflow logging failed: {e}")
 
 
 def main():
@@ -265,6 +285,10 @@ def main():
         # Log to MLflow
         log_to_mlflow(metrics, args.month, metadata)
 
+        # Save performance history using utils function
+        drift_type = determine_drift_type(args.month)
+        save_performance_history(args.month, metrics, drift_type)
+
         # Output results
         if args.output_json:
             with open("evaluation_results.json", "w") as f:
@@ -302,6 +326,7 @@ def main():
             with open("evaluation_results.json", "w") as f:
                 json.dump(error_result, f, indent=2)
         raise
+
 
 if __name__ == "__main__":
     main()
