@@ -186,6 +186,7 @@ jobs:
 
     - name: Summary Report
       if: always()
+      shell: bash
       run: |
         echo "## MLOps Pipeline - Full Year Simulation Results" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
@@ -224,9 +225,9 @@ jobs:
           
           echo "### Performance Analysis" >> $GITHUB_STEP_SUMMARY
           
-          AVG_ACCURACY=$(tail -n +2 simulation_results.csv | awk -F',' '$2!="ERROR" {sum+=$2; count++} END {if(count>0) printf "%.3f", sum/count; else print "N/A"}')
-          AVG_AUROC=$(tail -n +2 simulation_results.csv | awk -F',' '$3!="ERROR" {sum+=$3; count++} END {if(count>0) printf "%.3f", sum/count; else print "N/A"}')
-          MAX_DROP=$(tail -n +2 simulation_results.csv | awk -F',' '$4!="ERROR" {if($4>max || max=="") max=$4} END {if(max!="") printf "%.4f", max; else print "N/A"}')
+          AVG_ACCURACY=$(tail -n +2 simulation_results.csv | awk -F',' '$2!="ERROR" {sum+=$2; count++} END {if(count>0) printf "%.3f", sum/count; else print "N/A"}' || echo "N/A")
+          AVG_AUROC=$(tail -n +2 simulation_results.csv | awk -F',' '$3!="ERROR" {sum+=$3; count++} END {if(count>0) printf "%.3f", sum/count; else print "N/A"}' || echo "N/A")
+          MAX_DROP=$(tail -n +2 simulation_results.csv | awk -F',' '$4!="ERROR" {if($4>max || max=="") max=$4} END {if(max!="") printf "%.4f", max; else print "N/A"}' || echo "N/A")
           
           echo "- **Average accuracy across year**: $AVG_ACCURACY" >> $GITHUB_STEP_SUMMARY
           echo "- **Average AUROC across year**: $AVG_AUROC" >> $GITHUB_STEP_SUMMARY
