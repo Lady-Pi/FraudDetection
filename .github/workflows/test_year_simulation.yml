@@ -186,78 +186,55 @@ jobs:
 
     - name: Summary Report
       if: always()
-      shell: bash
       run: |
-        echo "## MLOps Pipeline - Full Year Simulation Results" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
+        python << 'EOF'
+        import pandas as pd
         
-        if [ -f "simulation_results.csv" ]; then
-          echo "### Simulation Overview" >> $GITHUB_STEP_SUMMARY
-          
-          TOTAL_MONTHS=$(tail -n +2 simulation_results.csv | wc -l)
-          RETRAIN_COUNT=$(tail -n +2 simulation_results.csv | grep -c "TRUE")
-          SUCCESSFUL_MONTHS=$(tail -n +2 simulation_results.csv | grep -cv "ERROR")
-          
-          echo "- **Total months evaluated**: $TOTAL_MONTHS" >> $GITHUB_STEP_SUMMARY
-          echo "- **Successful evaluations**: $SUCCESSFUL_MONTHS" >> $GITHUB_STEP_SUMMARY
-          echo "- **Retraining events triggered**: $RETRAIN_COUNT" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "### Monthly Performance Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Month | Accuracy | AUROC | Performance Drop | Retrain Triggered | Action Taken |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|----------|-------|------------------|-------------------|--------------|" >> $GITHUB_STEP_SUMMARY
-          
-          tail -n +2 simulation_results.csv | while IFS=',' read -r month accuracy auroc perf_drop needs_retrain action; do
-            if [ "$accuracy" != "ERROR" ]; then
-              FORMATTED_ACC=$(printf "%.3f" "$accuracy" 2>/dev/null || echo "$accuracy")
-              FORMATTED_AUROC=$(printf "%.3f" "$auroc" 2>/dev/null || echo "$auroc")
-              FORMATTED_DROP=$(printf "%.4f" "$perf_drop" 2>/dev/null || echo "$perf_drop")
-            else
-              FORMATTED_ACC="ERROR"
-              FORMATTED_AUROC="ERROR" 
-              FORMATTED_DROP="ERROR"
-            fi
+        try:
+            df = pd.read_csv('simulation_results.csv')
             
-            echo "| $month | $FORMATTED_ACC | $FORMATTED_AUROC | $FORMATTED_DROP | $needs_retrain | $action |" >> $GITHUB_STEP_SUMMARY
-          done || true
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "### Performance Analysis" >> $GITHUB_STEP_SUMMARY
-          
-          AVG_ACCURACY=$(tail -n +2 simulation_results.csv | awk -F',' '$2!="ERROR" {sum+=$2; count++} END {if(count>0) printf "%.3f", sum/count; else print "N/A"}' || echo "N/A")
-          AVG_AUROC=$(tail -n +2 simulation_results.csv | awk -F',' '$3!="ERROR" {sum+=$3; count++} END {if(count>0) printf "%.3f", sum/count; else print "N/A"}' || echo "N/A")
-          MAX_DROP=$(tail -n +2 simulation_results.csv | awk -F',' '$4!="ERROR" {if($4>max || max=="") max=$4} END {if(max!="") printf "%.4f", max; else print "N/A"}' || echo "N/A")
-          
-          echo "- **Average accuracy across year**: $AVG_ACCURACY" >> $GITHUB_STEP_SUMMARY
-          echo "- **Average AUROC across year**: $AVG_AUROC" >> $GITHUB_STEP_SUMMARY
-          echo "- **Maximum performance drop**: $MAX_DROP" >> $GITHUB_STEP_SUMMARY
-          echo "- **Performance threshold**: ${{ env.PERFORMANCE_THRESHOLD }}" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "$RETRAIN_COUNT" -gt 0 ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Retraining Summary" >> $GITHUB_STEP_SUMMARY
+            with open('summary_report.md', 'w') as f:
+                f.write("## MLOps Pipeline - Full Year Simulation Results\n\n")
+                
+                # Basic overview
+                total_months = len(df)
+                retrained_months = df[df['Needs_Retrain'] == True]
+                retrain_count = len(retrained_months)
+                
+                f.write("### Overview\n")
+                f.write(f"- **Total months evaluated**: {total_months}\n")
+                f.write(f"- **Retraining events**: {retrain_count}\n")
+                if retrain_count > 0:
+                    months = ', '.join([f"{int(m):02d}" for m in retrained_months['Month']])
+                    f.write(f"- **Months retrained**: {months}\n")
+                f.write("\n")
+                
+                # Simple results table
+                f.write("### Monthly Results\n")
+                f.write("| Month | Accuracy | Retrained |\n")
+                f.write("|-------|----------|----------|\n")
+                
+                for _, row in df.iterrows():
+                    month = f"{int(row['Month']):02d}"
+                    if row['Accuracy'] != 'ERROR':
+                        accuracy = f"{float(row['Accuracy']):.3f}"
+                    else:
+                        accuracy = "ERROR"
+                    
+                    retrained = "Yes" if row['Needs_Retrain'] == True else "No"
+                    f.write(f"| {month} | {accuracy} | {retrained} |\n")
+                
+                print("Summary report generated successfully")
             
-            RETRAIN_MONTHS=$(tail -n +2 simulation_results.csv | awk -F',' '$5=="TRUE" {print $1}' | tr '\n' ' ')
-            echo "- **Months where retraining occurred**: ${RETRAIN_MONTHS:-None}" >> $GITHUB_STEP_SUMMARY
+            # Copy to GitHub step summary
+            with open('summary_report.md', 'r') as f:
+                content = f.read()
             
-            SUCCESSFUL_RETRAINS=$(tail -n +2 simulation_results.csv | grep -c "retrained")
-            FAILED_RETRAINS=$(tail -n +2 simulation_results.csv | grep -c "retrain_failed")
-            
-            echo "- **Successful retraining operations**: $SUCCESSFUL_RETRAINS" >> $GITHUB_STEP_SUMMARY
-            echo "- **Failed retraining operations**: $FAILED_RETRAINS" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Retraining Summary" >> $GITHUB_STEP_SUMMARY
-            echo "- **Result**: No retraining required - model performance remained stable" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-        else
-          echo "### Error" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status**: Simulation results file not found" >> $GITHUB_STEP_SUMMARY
-        fi
-        
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Service Status" >> $GITHUB_STEP_SUMMARY
-        echo "- **API Health**: https://frauddetection-production-bfff.up.railway.app/health" >> $GITHUB_STEP_SUMMARY
-        echo "- **Live Prediction**: Available via POST /predict" >> $GITHUB_STEP_SUMMARY
+            with open('${{ github.step_summary }}', 'a') as f:
+                f.write(content)
+                
+        except Exception as e:
+            print(f"Summary generation failed: {e}")
+            with open('${{ github.step_summary }}', 'a') as f:
+                f.write("## MLOps Pipeline Results\n\nSimulation completed - check artifacts for detailed results.\n")
+        EOF
