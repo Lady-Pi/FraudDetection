@@ -209,20 +209,33 @@ jobs:
                     f.write(f"- **Months retrained**: {months}\n")
                 f.write("\n")
                 
-                # Simple results table
+                # Detailed results table
                 f.write("### Monthly Results\n")
-                f.write("| Month | Accuracy | Retrained |\n")
-                f.write("|-------|----------|----------|\n")
+                f.write("| Month | Pre-Retrain Accuracy | Final Accuracy | Performance Drop | Retrained |\n")
+                f.write("|-------|---------------------|----------------|------------------|----------|\n")
                 
                 for _, row in df.iterrows():
                     month = f"{int(row['Month']):02d}"
+                    
                     if row['Accuracy'] != 'ERROR':
-                        accuracy = f"{float(row['Accuracy']):.3f}"
+                        final_accuracy = f"{float(row['Accuracy']):.3f}"
+                        perf_drop = f"{float(row['Performance_Drop']):.4f}"
+                        
+                        # For retrained months, we need to show the original poor performance
+                        if row['Needs_Retrain'] == True:
+                            # Calculate pre-retrain accuracy from performance drop
+                            baseline = 0.9207  # From baseline model training
+                            pre_retrain_acc = baseline - float(row['Performance_Drop'])
+                            pre_retrain = f"{pre_retrain_acc:.3f}"
+                        else:
+                            pre_retrain = "N/A"
                     else:
-                        accuracy = "ERROR"
+                        final_accuracy = "ERROR"
+                        pre_retrain = "ERROR"
+                        perf_drop = "ERROR"
                     
                     retrained = "Yes" if row['Needs_Retrain'] == True else "No"
-                    f.write(f"| {month} | {accuracy} | {retrained} |\n")
+                    f.write(f"| {month} | {pre_retrain} | {final_accuracy} | {perf_drop} | {retrained} |\n")
                 
                 print("Summary report generated successfully")
             
