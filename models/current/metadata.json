@@ -1,7 +1,8 @@
 {
   "model_type": "LogisticRegression",
+  "training_date": "2025-08-31T19:15:18",
   "training_months": "01-03",
-  "feature_count": 14,
+  "validation_month": "04",
   "features": [
     "debt_to_income_ratio",
     "applicant_age",
@@ -18,8 +19,16 @@
     "trans_transaction_amount_std",
     "trans_fraud_flag_sum"
   ],
-  "training_date": "2025-08-29T19:03:34.602119",
-  "version": "v20250829_190334",
-  "class_weight": "balanced",
-  "random_state": 42
+  "n_features": 14,
+  "performance": {
+    "validation_accuracy": 0.9203263738900888,
+    "validation_auc": 0.9205029689137268,
+    "validation_precision": 0.16,
+    "validation_recall": 0.7792207792207793,
+    "validation_f1": 0.26548672566371684
+  },
+  "preprocessing": {
+    "scaler_type": "StandardScaler",
+    "encoders": []
+  }
 }
