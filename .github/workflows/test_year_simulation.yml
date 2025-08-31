@@ -144,7 +144,8 @@ jobs:
         from datetime import datetime
         
         try:
-            df = pd.read_csv('simulation_results.csv')
+            # Read CSV without automatically converting N/A to NaN
+            df = pd.read_csv('simulation_results.csv', keep_default_na=False)
             
             total_months = len(df)
             retraining_months = len(df[df['Needs_Retrain'] == True])
@@ -243,7 +244,10 @@ jobs:
                         elif post_retrain in ['ERROR', 'FAILED']:
                             post_retrain_display = post_retrain
                         else:
-                            post_retrain_display = f"{float(post_retrain):.3f}"
+                            try:
+                                post_retrain_display = f"{float(post_retrain):.3f}"
+                            except (ValueError, TypeError):
+                                post_retrain_display = "N/A"
                     else:
                         initial_acc = "ERROR"
                         perf_drop = "ERROR"
