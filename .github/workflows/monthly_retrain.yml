@@ -276,5 +276,5 @@ jobs:
         if [ "${{ steps.evaluate.outputs.needs_retrain }}" == "true" ]; then
           echo "- **Action**: Model retrained and deployed" >> $GITHUB_STEP_SUMMARY
         else
-          echo "- **Action**: ⏸No retraining needed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action**: No retraining needed" >> $GITHUB_STEP_SUMMARY
         fi
