@@ -97,7 +97,7 @@ jobs:
     - name: Check if retraining needed
       run: |
         if [ "${{ steps.evaluate.outputs.needs_retrain }}" == "true" ] || [ "${{ github.event.inputs.force_retrain }}" == "true" ]; then
-          echo "🔄 Retraining triggered:"
+          echo "Retraining triggered:"
           if [ "${{ github.event.inputs.force_retrain }}" == "true" ]; then
             echo "  - Reason: Force retrain requested"
           fi
@@ -105,20 +105,20 @@ jobs:
             echo "  - Reason: Performance drop detected (${ACCURACY_DROP})"
           fi
         else
-          echo "✅ Model performance acceptable - no retraining needed"
+          echo "Model performance acceptable - no retraining needed"
         fi
 
     - name: Retrain model
       if: steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true'
       run: |
-        echo "🚀 Starting model retraining..."
+        echo "Starting model retraining..."
         python -m src.models.train --through ${{ steps.month.outputs.month }}
         
         # Verify new model was created
         if [ -f "models/current/model.pkl" ]; then
-          echo "✅ Model retraining completed successfully"
+          echo "Model retraining completed successfully"
         else
-          echo "❌ Model retraining failed"
+          echo "Model retraining failed"
           exit 1
         fi
 
@@ -144,9 +144,9 @@ jobs:
         echo "deploy_model=$DEPLOY_MODEL" >> $GITHUB_OUTPUT
         
         if [ "$DEPLOY_MODEL" == "true" ]; then
-          echo "✅ New model meets deployment criteria"
+          echo "New model meets deployment criteria"
         else
-          echo "❌ New model performance too low for deployment"
+          echo "New model performance too low for deployment"
           exit 1
         fi
 
@@ -161,13 +161,13 @@ jobs:
         # Archive old model if it exists
         if [ -f "models/current/model.pkl" ]; then
           cp models/current/* "$ARCHIVE_DIR/" 2>/dev/null || true
-          echo "📦 Previous model archived to $ARCHIVE_DIR"
+          echo "Previous model archived to $ARCHIVE_DIR"
         fi
 
     - name: Deploy to Railway
       if: (steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true') && steps.validate.outputs.deploy_model == 'true'
       run: |
-        echo "🚀 Deploying to Railway..."
+        echo "Deploying to Railway..."
         
         # Install Railway CLI
         npm install -g @railway/cli
@@ -179,12 +179,12 @@ jobs:
         # Wait for deployment to complete
         sleep 60
         
-        echo "✅ Deployment initiated"
+        echo "Deployment initiated"
 
     - name: Post-deployment health check
       if: (steps.evaluate.outputs.needs_retrain == 'true' || github.event.inputs.force_retrain == 'true') && steps.validate.outputs.deploy_model == 'true'
       run: |
-        echo "🏥 Running post-deployment health check..."
+        echo "Running post-deployment health check..."
         
         # Wait for service to be ready
         sleep 30
@@ -194,9 +194,9 @@ jobs:
           https://frauddetection-production-bfff.up.railway.app/health)
         
         if [ "$HEALTH_RESPONSE" == "200" ]; then
-          echo "✅ Health check passed"
+          echo "Health check passed"
         else
-          echo "❌ Health check failed (HTTP $HEALTH_RESPONSE)"
+          echo "Health check failed (HTTP $HEALTH_RESPONSE)"
           exit 1
         fi
         
@@ -209,9 +209,9 @@ jobs:
         
         HTTP_CODE=$(echo "$PRED_RESPONSE" | tail -c 4)
         if [ "$HTTP_CODE" == "200" ]; then
-          echo "✅ Prediction endpoint test passed"
+          echo "Prediction endpoint test passed"
         else
-          echo "❌ Prediction endpoint test failed (HTTP $HTTP_CODE)"
+          echo "Prediction endpoint test failed (HTTP $HTTP_CODE)"
           exit 1
         fi
 
@@ -241,7 +241,7 @@ jobs:
         # Append results
         echo "$TIMESTAMP,$MONTH,$ACCURACY,$AUROC,$RETRAINED,$NOTES" >> metrics/performance_history.csv
         
-        echo "📊 Performance history updated"
+        echo "Performance history updated"
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -260,13 +260,13 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add models/current/ metrics/performance_history.csv
-        git commit -m "🤖 Model retrained for month ${{ steps.month.outputs.month }}" || exit 0
+        git commit -m "Model retrained for month ${{ steps.month.outputs.month }}" || exit 0
         git push
 
     - name: Summary
       if: always()
       run: |
-        echo "## 📊 Monthly Evaluation Summary" >> $GITHUB_STEP_SUMMARY
+        echo "## Monthly Evaluation Summary" >> $GITHUB_STEP_SUMMARY
         echo "- **Month**: ${{ steps.month.outputs.month }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Accuracy**: ${{ steps.evaluate.outputs.accuracy }}" >> $GITHUB_STEP_SUMMARY
         echo "- **AUROC**: ${{ steps.evaluate.outputs.auroc }}" >> $GITHUB_STEP_SUMMARY
@@ -274,7 +274,7 @@ jobs:
         echo "- **Retrained**: ${{ steps.evaluate.outputs.needs_retrain }}" >> $GITHUB_STEP_SUMMARY
         
         if [ "${{ steps.evaluate.outputs.needs_retrain }}" == "true" ]; then
-          echo "- **Action**: ✅ Model retrained and deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action**: Model retrained and deployed" >> $GITHUB_STEP_SUMMARY
         else
-          echo "- **Action**: ⏸️ No retraining needed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action**: ⏸No retraining needed" >> $GITHUB_STEP_SUMMARY
         fi
