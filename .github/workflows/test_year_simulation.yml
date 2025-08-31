@@ -70,7 +70,7 @@ jobs:
     - name: Simulate monthly evaluations
       run: |
         echo "Starting 12-month simulation..."
-        echo "Month,Initial_Accuracy,AUROC,Performance_Drop,Needs_Retrain,Post_Retrain_Accuracy,Action_Taken" > simulation_results.csv
+        echo "Month,Initial_Accuracy,AUROC,Performance_Drop,Needs_Retrain,Final_Accuracy,Action_Taken" > simulation_results.csv
         
         START_MONTH=${{ github.event.inputs.start_month }}
         END_MONTH=${{ github.event.inputs.end_month }}
@@ -93,7 +93,7 @@ jobs:
             echo "  AUROC: $AUROC"
             echo "  Performance drop: $ACCURACY_DROP"
             
-            POST_RETRAIN_ACCURACY="N/A"
+            FINAL_ACCURACY=$INITIAL_ACCURACY  # Default to initial accuracy
             
             if [ "$NEEDS_RETRAIN" == "True" ]; then
               echo "  RETRAINING TRIGGERED - Performance drop detected!"
@@ -105,24 +105,24 @@ jobs:
                 ACTION_TAKEN="retrained"
                 
                 python -m src.models.evaluate --month $MONTH --output-json
-                POST_RETRAIN_ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json'))['accuracy'])")
+                FINAL_ACCURACY=$(python -c "import json; print(json.load(open('evaluation_results.json'))['accuracy'])")
                 NEW_AUROC=$(python -c "import json; print(json.load(open('evaluation_results.json'))['auroc'])")
-                echo "  Post-retrain accuracy: $POST_RETRAIN_ACCURACY"
-                echo "  Post-retrain AUROC: $NEW_AUROC"
+                echo "  Final accuracy: $FINAL_ACCURACY"
+                echo "  Final AUROC: $NEW_AUROC"
                 
                 # Update AUROC to post-retrain value for final reporting
                 AUROC=$NEW_AUROC
               else
                 echo "  Retraining failed"
                 ACTION_TAKEN="retrain_failed"
-                POST_RETRAIN_ACCURACY="FAILED"
+                FINAL_ACCURACY="FAILED"
               fi
             else
               echo "  Model performance acceptable"
               ACTION_TAKEN="no_action"
             fi
             
-            echo "$MONTH,$INITIAL_ACCURACY,$AUROC,$ACCURACY_DROP,$NEEDS_RETRAIN,$POST_RETRAIN_ACCURACY,$ACTION_TAKEN" >> simulation_results.csv
+            echo "$MONTH,$INITIAL_ACCURACY,$AUROC,$ACCURACY_DROP,$NEEDS_RETRAIN,$FINAL_ACCURACY,$ACTION_TAKEN" >> simulation_results.csv
           else
             echo "  Evaluation failed for month $MONTH"
             echo "$MONTH,ERROR,ERROR,ERROR,ERROR,ERROR,evaluation_failed" >> simulation_results.csv
@@ -144,8 +144,8 @@ jobs:
         from datetime import datetime
         
         try:
-            # Read CSV without automatically converting N/A to NaN
-            df = pd.read_csv('simulation_results.csv', keep_default_na=False)
+        try:
+            df = pd.read_csv('simulation_results.csv')
             
             total_months = len(df)
             retraining_months = len(df[df['Needs_Retrain'] == True])
@@ -154,11 +154,9 @@ jobs:
             successful_evals = df[df['Initial_Accuracy'] != 'ERROR']
             avg_initial_accuracy = successful_evals['Initial_Accuracy'].astype(float).mean()
             
-            # Calculate average post-retrain accuracy (only for retrained months)
-            retrained_success = df[(df['Post_Retrain_Accuracy'] != 'N/A') & 
-                                  (df['Post_Retrain_Accuracy'] != 'ERROR') & 
-                                  (df['Post_Retrain_Accuracy'] != 'FAILED')]
-            avg_post_retrain = retrained_success['Post_Retrain_Accuracy'].astype(float).mean() if len(retrained_success) > 0 else None
+            # Calculate average final accuracy 
+            successful_final = df[(df['Final_Accuracy'] != 'ERROR') & (df['Final_Accuracy'] != 'FAILED')]
+            avg_final_accuracy = successful_final['Final_Accuracy'].astype(float).mean()
             
             retrained_months = df[df['Needs_Retrain'] == True]['Month'].astype(str).str.zfill(2).tolist()
             
@@ -167,7 +165,7 @@ jobs:
                 "total_months_evaluated": total_months,
                 "retraining_triggered": retraining_months,
                 "average_initial_accuracy": round(avg_initial_accuracy, 4),
-                "average_post_retrain_accuracy": round(avg_post_retrain, 4) if avg_post_retrain else None,
+                "average_final_accuracy": round(avg_final_accuracy, 4),
                 "retrained_months": retrained_months,
                 "summary": f"Completed evaluation of {total_months} months with {retraining_months} retraining events"
             }
@@ -180,8 +178,7 @@ jobs:
             print(f"Months evaluated: {total_months}")
             print(f"Retraining events: {retraining_months}")
             print(f"Average initial accuracy: {avg_initial_accuracy:.4f}")
-            if avg_post_retrain:
-                print(f"Average post-retrain accuracy: {avg_post_retrain:.4f}")
+            print(f"Average final accuracy: {avg_final_accuracy:.4f}")
             print(f"Months that triggered retraining: {retrained_months}")
             
         except Exception as e:
@@ -214,7 +211,7 @@ jobs:
                 
                 # Basic overview
                 total_months = len(df)
-                retrained_months = df[df['Needs_Retrain'] == True]
+                retrained_months = df[df['Needs_Retrain'] == 'True']
                 retrain_count = len(retrained_months)
                 
                 f.write("### Overview\n")
@@ -227,8 +224,8 @@ jobs:
                 
                 # Improved results table with clearer column structure
                 f.write("### Monthly Results\n")
-                f.write("| Month | Initial Accuracy | Performance Drop | Retrained | Post-Retrain Accuracy |\n")
-                f.write("|-------|------------------|------------------|-----------|---------------------|\n")
+                f.write("| Month | Initial Accuracy | Performance Drop | Retrained | Final Accuracy |\n")
+                f.write("|-------|------------------|------------------|-----------|----------------|\n")
                 
                 for _, row in df.iterrows():
                     month = f"{int(row['Month']):02d}"
@@ -236,25 +233,20 @@ jobs:
                     if row['Initial_Accuracy'] != 'ERROR':
                         initial_acc = f"{float(row['Initial_Accuracy']):.3f}"
                         perf_drop = f"{float(row['Performance_Drop']):.4f}"
-                        post_retrain = row['Post_Retrain_Accuracy']
+                        final_acc = row['Final_Accuracy']
                         
-                        # Format post-retrain accuracy
-                        if post_retrain == 'N/A':
-                            post_retrain_display = "N/A"
-                        elif post_retrain in ['ERROR', 'FAILED']:
-                            post_retrain_display = post_retrain
+                        # Format final accuracy
+                        if final_acc in ['ERROR', 'FAILED']:
+                            final_accuracy_display = final_acc
                         else:
-                            try:
-                                post_retrain_display = f"{float(post_retrain):.3f}"
-                            except (ValueError, TypeError):
-                                post_retrain_display = "N/A"
+                            final_accuracy_display = f"{float(final_acc):.3f}"
                     else:
                         initial_acc = "ERROR"
                         perf_drop = "ERROR"
-                        post_retrain_display = "ERROR"
+                        final_accuracy_display = "ERROR"
                     
                     retrained = "Yes" if row['Needs_Retrain'] == True else "No"
-                    f.write(f"| {month} | {initial_acc} | {perf_drop} | {retrained} | {post_retrain_display} |\n")
+                    f.write(f"| {month} | {initial_acc} | {perf_drop} | {retrained} | {final_accuracy_display} |\n")
                 
                 print("Summary report generated successfully")
             
