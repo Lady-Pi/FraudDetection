@@ -1,0 +1,17 @@
+### Test Health
+GET https://frauddetection-production-bfff.up.railway.app/health
+
+### Test Prediction
+POST https://frauddetection-production-bfff.up.railway.app/predict
+Authorization: Bearer fraud-detection-secret-2025
+Content-Type: application/json
+
+{
+  "loan_amount_requested": 50000,
+  "monthly_income": 8000,
+  "applicant_age": 35,
+  "cibil_score": 750,
+  "number_of_dependents": 2,
+  "existing_emis_monthly": 2400,
+  "loan_tenure_months": 36
+}
